@@ -47,6 +47,7 @@ class TraceSession
 
         $requestPath = RequestInfo::uri();
 
+
         self::$eventBuffer[] = [
             'StartRequest' => [
                 'request_id' =>  self::$requestId,
@@ -73,6 +74,21 @@ class TraceSession
                 'timestamp' => Timestamp::formatNow(),
             ]
         ];
+
+        $queueStart = RequestInfo::queueTimeStart();
+        if ($queueStart !== null) {
+            $now = microtime(true);
+            $queueTimeNs = ($now - $queueStart) * 1e9;
+
+            self::$eventBuffer[] = [
+                'TagRequest' => [
+                    'request_id' => self::$requestId,
+                    'tag' => 'queue_time_ns',
+                    'value' => (int) $queueTimeNs,
+                    'timestamp' => Timestamp::formatNow(),
+                ]
+            ];
+        }
     }
     public static function endRequest()
     {
