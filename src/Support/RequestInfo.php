@@ -4,17 +4,17 @@ namespace AssetPlan\ScoutLiteAPM\Support;
 
 class RequestInfo
 {
-    public static function uri(): string
+    public static function uri()
     {
         return $_SERVER['REQUEST_URI'] ?? '/';
     }
 
-    public static function userAgent(): string
+    public static function userAgent()
     {
         return $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
     }
 
-    public static function queueStartTime(): ?float
+    public static function queueStartTime()
     {
         foreach (['HTTP_X_QUEUE_START', 'HTTP_X_REQUEST_START'] as $header) {
             if (isset($_SERVER[$header])) {

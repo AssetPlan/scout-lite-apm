@@ -225,7 +225,7 @@ class TraceSession
         self::resetSession();
     }
 
-    public static function isValid(): bool
+    public static function isValid()
     {
         if (!self::$bootstrapped) {
             return false;
