@@ -6,12 +6,12 @@ class RequestInfo
 {
     public static function uri()
     {
-        return $_SERVER['REQUEST_URI'] ?? '/';
+        return isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/';
     }
 
     public static function userAgent()
     {
-        return $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+        return isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'unknown';
     }
 
     public static function queueStartTime()
