@@ -13,6 +13,7 @@ class TraceSession
     protected static $eventBuffer = [];
     protected static $socketPath;
     protected static $openSpans = [];
+    protected static $bootstrapped = false;
 
     public static function bootstrap($app = null, $key = null, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0')
     {
@@ -22,6 +23,8 @@ class TraceSession
         }
 
         self::register($app, $key, $apiVersion, $socketPath);
+
+        self::$bootstrapped = true;
     }
 
     public static function register($app, $key, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0')
@@ -71,7 +74,6 @@ class TraceSession
             ]
         ];
     }
-
     public static function endRequest()
     {
         self::$eventBuffer[] = [
@@ -177,13 +179,21 @@ class TraceSession
 
     public static function flush()
     {
-        if (empty(self::$eventBuffer)) {
+        $isValid = self::isValid();
+        $hasEvents = count(self::$eventBuffer) > 0;
+
+        if (!$hasEvents) {
             error_log('[ScoutLite] No events to flush');
-            return;
         }
 
-        if (!self::isValid()) {
+        if (!$isValid) {
             error_log('[ScoutLite] Trace session is not valid');
+        }
+
+        $shouldFlush = $isValid && $hasEvents;
+
+        if (!$shouldFlush) {
+            self::resetSession();
             return;
         }
 
@@ -201,6 +211,10 @@ class TraceSession
 
     public static function isValid(): bool
     {
+        if (!self::$bootstrapped) {
+            return false;
+        }
+
         if (!self::$requestId || empty(self::$eventBuffer)) {
             return false;
         }
@@ -222,5 +236,6 @@ class TraceSession
         self::$eventBuffer = [];
         self::$openSpans = [];
         self::$requestId = null;
+        self::$bootstrapped = false;
     }
 }
