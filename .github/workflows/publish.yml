@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Notify Packagist
         run: |
-          curl -X POST https://packagist.org/api/update-package \
-               -d "{\"repository\":{\"url\":\"https://github.com/${{ github.repository }}\"}}" \
-               -H "Content-Type: application/json" \
-               -H "Authorization: token=${{ secrets.PACKAGIST_API_TOKEN }}"
+          curl -X POST \
+            -H 'Content-Type: application/json' \
+            "https://packagist.org/api/update-package?username=cfuentessalgado&apiToken=${{ secrets.PACKAGIST_API_TOKEN }}" \
+            -d "{\"repository\":{\"url\":\"https://github.com/${{ github.repository }}\"}}"
