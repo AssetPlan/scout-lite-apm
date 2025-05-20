@@ -5,7 +5,7 @@ require_once 'vendor/autoload.php'; // if needed
 use AssetPlan\ScoutLiteAPM\TraceSession;
 
 // Bootstrap with fake values
-TraceSession::bootstrap('TestApp', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+TraceSession::bootstrap(getenv('SCOUT_APP_NAME'), getenv('SCOUT_KEY'), getenv('SCOUT_SOCKET_PATH'));
 
 TraceSession::startRequest();
 

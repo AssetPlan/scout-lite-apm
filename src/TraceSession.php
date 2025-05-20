@@ -22,7 +22,7 @@ class TraceSession
             return;
         }
 
-        self::register($app, $key, $apiVersion, $socketPath);
+        self::register($app, $key, $socketPath, $apiVersion);
 
         self::$bootstrapped = true;
     }
