@@ -1,0 +1,16 @@
+name: Update Packagist
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  packagist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Packagist
+        run: |
+          curl -X POST https://packagist.org/api/update-package \
+               -d "{\"repository\":{\"url\":\"https://github.com/${{ github.repository }}\"}}" \
+               -H "Content-Type: application/json" \
+               -H "Authorization: token=${{ secrets.PACKAGIST_API_TOKEN }}"
