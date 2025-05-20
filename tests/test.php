@@ -28,6 +28,11 @@ $bufferProp = $reflect->getProperty('eventBuffer');
 $bufferProp->setAccessible(true);
 $buffer = $bufferProp->getValue();
 
+$health = TraceSession::isValid() ? 'Valid' : 'Invalid';
+
+echo "\n--- Trace Session Health: $health ---\n";
+
+
 echo "\n--- Buffered Events ---\n";
 var_dump($buffer);
 
