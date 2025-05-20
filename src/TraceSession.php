@@ -12,18 +12,19 @@ class TraceSession
     protected static $requestId;
     protected static $eventBuffer = [];
     protected static $socketPath;
+    protected static $openSpans = [];
 
-    public static function bootstrap($app = null, $key = null, $apiVersion = '1.0')
+    public static function bootstrap($app = null, $key = null, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0')
     {
 
-        if (! isset($app) || ! isset($key)) {
+        if (! isset($app) || ! isset($key) || ! isset($socketPath)) {
             return;
         }
 
-        self::register($app, $key, $apiVersion);
+        self::register($app, $key, $apiVersion, $socketPath);
     }
 
-    public static function register($app, $key, $apiVersion = '1.0', $socketPath = null)
+    public static function register($app, $key, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0')
     {
         if ($socketPath) {
             self::$socketPath = $socketPath;
@@ -87,6 +88,7 @@ class TraceSession
         $operation =  'Controller/' . $controllerName . '::' . $action;
 
         $spanId = 'span-' .  UUID::v4();
+        self::$openSpans[$spanId] = true;
 
         self::$eventBuffer[] = [
             'StartSpan' => [
@@ -103,9 +105,13 @@ class TraceSession
 
     public static function endController($controllerSpanId)
     {
-        if (!$controllerSpanId) {
+
+        if (!isset(self::$openSpans[$controllerSpanId])) {
+            error_log('[ScoutLite] Span not found: ' . $controllerSpanId);
             return;
         }
+
+        unset(self::$openSpans[$controllerSpanId]);
 
         self::$eventBuffer[] = [
             'StopSpan' => [
@@ -120,7 +126,8 @@ class TraceSession
     {
 
         $spanId = 'span-' . UUID::v4();
-        $operation = 'SQL/Query';
+
+        self::$openSpans[$spanId] = true;
 
         if (preg_match('/^\s*(SELECT|INSERT|UPDATE|DELETE)\s+.*?\bFROM\b\s+`?(\w+)`?/i', $sql, $m)) {
             $verb = strtolower($m[1]);
@@ -154,6 +161,13 @@ class TraceSession
 
     public static function endSql($sqlSpan)
     {
+
+        if (!isset(self::$openSpans[$sqlSpan])) {
+            error_log('[ScoutLite] Span not found: ' . $sqlSpan);
+            return;
+        }
+
+        unset(self::$openSpans[$sqlSpan]);
         self::$eventBuffer[] = ['StopSpan' => [
             'request_id' => self::$requestId,
             'span_id' => $sqlSpan,
@@ -163,6 +177,17 @@ class TraceSession
 
     public static function flush()
     {
+        if (empty(self::$eventBuffer)) {
+            error_log('[ScoutLite] No events to flush');
+            return;
+        }
+
+        if (!self::isValid()) {
+            error_log('[ScoutLite] Trace session is not valid');
+            return;
+        }
+
+
         Socket::make(self::$socketPath);
 
         $flushed = Socket::send(self::$eventBuffer);
@@ -171,6 +196,31 @@ class TraceSession
             error_log('[ScoutLite] Failed to flush events');
         }
 
+        self::resetSession();
+    }
+
+    public static function isValid(): bool
+    {
+        if (!self::$requestId || empty(self::$eventBuffer)) {
+            return false;
+        }
+
+        if (count(self::$openSpans) > 0) {
+            return false;
+        }
+
+        $last = end(self::$eventBuffer);
+        if (!isset($last['FinishRequest'])) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function resetSession()
+    {
         self::$eventBuffer = [];
+        self::$openSpans = [];
+        self::$requestId = null;
     }
 }
