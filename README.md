@@ -11,10 +11,11 @@ No Composer bloat, no framework magic. Just trace your code and send to the agen
 * ✅ Works with PHP **5.6+**
 * ✅ Compatible with **Scout APM Core Agent**
 * ✅ Flush-safe in environments using `exit()` and `die()`
-* ✅ Tracks controller actions and SQL queries
+* ✅ Tracks controller actions, SQL queries, and custom code spans
 * ✅ Automatically redacts SQL values
 * ✅ Simple API for instrumentation
 * ✅ Fully buffered and flushed in a single atomic write
+* ✅ Measures request queue time (when available)
 
 ---
 
@@ -39,15 +40,22 @@ TraceSession::bootstrap('YourAppName', 'your-agent-key');
 // Start the request
 TraceSession::startRequest();
 
+// Optionally measure queue time automatically
+
+// Custom lifecycle span (e.g. beforeFilter in CakePHP)
+$lifecycle = TraceSession::startCustom('Lifecycle/beforeFilter');
+// ...
+TraceSession::endCustom($lifecycle);
+
 // Instrument a controller span
 $controller = TraceSession::startController('UserController', 'index');
+// ...
+TraceSession::endController($controller);
 
 // Instrument SQL (automatically redacted)
 $sqlSpan = TraceSession::startSql('SELECT * FROM users WHERE id = 123');
+// ...
 TraceSession::endSql($sqlSpan);
-
-// End the controller span
-TraceSession::endController($controller);
 
 // Finish the request
 TraceSession::endRequest();
@@ -82,6 +90,13 @@ TraceSession::register('YourApp', 'your-key', '/tmp/scout-agent.sock', '1.0');
 
 * Calling `flush()` multiple times is safe — only one send will occur.
 * If any span is left open, or `FinishRequest` is missing, flush will be aborted.
+* Custom instrumentation can be added using `startCustom()` / `endCustom()` or `instrument()`.
+* Queue time will be included if headers like `X-Request-Start` are available.
+* You can inspect internals via:
+
+  * `TraceSession::getOpenSpans()`
+  * `TraceSession::getEventBuffer()`
+  * `TraceSession::getRequestId()`
 
 ---
 
