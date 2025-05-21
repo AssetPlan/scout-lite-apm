@@ -14,5 +14,10 @@
             "email": "cfuentess2010@gmail.com"
         }
     ],
-    "require": {}
+    "require": {
+        "php": ">=5.6",
+        "ext-sockets": "*",
+        "ext-openssl": "*",
+        "ext-json": "*"
+    }
 }
