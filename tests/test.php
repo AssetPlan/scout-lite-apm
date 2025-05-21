@@ -9,15 +9,28 @@ TraceSession::bootstrap(getenv('SCOUT_APP_NAME'), getenv('SCOUT_KEY'), getenv('S
 
 TraceSession::startRequest();
 
+TraceSession::instrument('Lifecycle/beforeFilter', function () {
+    usleep(100000);
+    return 'beforeFilter';
+});
+
 // Simulate controller action
 $controllerSpan = TraceSession::startController('TestController', 'index');
-usleep(1000);
-TraceSession::endController($controllerSpan);
-
+usleep(10000);
 // Simulate SQL
 $sqlSpan = TraceSession::startSql('SELECT * FROM users WHERE id = 42');
-usleep(1000);
+usleep(10000);
 TraceSession::endSql($sqlSpan);
+TraceSession::endController($controllerSpan);
+
+
+$customId = TraceSession::startCustom('Lifecycle/afterFilter');
+
+usleep(200000);
+
+TraceSession::endCustom($customId);
+
+
 
 // Finalize
 TraceSession::endRequest();
@@ -37,4 +50,4 @@ echo "\n--- Buffered Events ---\n";
 var_dump($buffer);
 
 // Optional: manually flush to socket
-// TraceSession::flush();
+//TraceSession::flush();

@@ -7,7 +7,7 @@ class Socket
 {
     protected static $socket;
 
-    public static function make(string $socketPath)
+    public static function make($socketPath)
     {
         $scheme = parse_url($socketPath, PHP_URL_SCHEME);
         $host = parse_url($socketPath, PHP_URL_HOST);
@@ -41,7 +41,7 @@ class Socket
         return true;
     }
 
-    public static function send(array $buffer)
+    public static function send($buffer)
     {
         if (!self::$socket) {
             error_log('[ScoutLite] Cannot flush — no active socket');
@@ -70,7 +70,7 @@ class Socket
             socket_send(self::$socket, pack('N', strlen($bye)), 4, 0);
             socket_send(self::$socket, $bye, strlen($bye), 0);
 
-            usleep(100_000);
+            usleep(10000);
             socket_close(self::$socket);
             self::$socket = null;
 

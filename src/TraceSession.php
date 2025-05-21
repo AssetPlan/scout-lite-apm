@@ -145,8 +145,6 @@ class TraceSession
 
         $spanId = 'span-' . UUID::v4();
 
-        self::$openSpans[$spanId] = true;
-
         if (preg_match('/^\s*(SELECT|INSERT|UPDATE|DELETE)\s+.*?\bFROM\b\s+`?(\w+)`?/i', $sql, $m)) {
             $verb = strtolower($m[1]);
             $table = $m[2];
@@ -156,6 +154,12 @@ class TraceSession
             $table = $m[2];
             $operation = "SQL/{$table}/{$verb}";
         }
+
+        if (!isset($operation)) {
+            return null;
+        }
+
+        self::$openSpans[$spanId] = true;
 
         $redacted = preg_replace("/('[^']*'|\b\d+\b)/", '?', $sql);
 
@@ -179,6 +183,9 @@ class TraceSession
 
     public static function endSql($sqlSpan)
     {
+        if (!$sqlSpan) {
+            return;
+        }
 
         if (!isset(self::$openSpans[$sqlSpan])) {
             error_log('[ScoutLite] Span not found: ' . $sqlSpan);
@@ -191,6 +198,65 @@ class TraceSession
             'span_id' => $sqlSpan,
             'timestamp' => Timestamp::formatNow(),
         ]];
+    }
+
+    public static function startCustom($operation = '', $parentId = null)
+    {
+        if (!isset($operation) || $operation === '') {
+            return;
+        }
+
+        $spanId = 'span-' . UUID::v4();
+
+        self::$openSpans[$spanId] = true;
+
+        self::$eventBuffer[] = [
+            'StartSpan' => [
+                'request_id' => self::$requestId,
+                'span_id' => $spanId,
+                'parent_id' => $parentId,
+                'operation' => $operation,
+                'timestamp' => Timestamp::formatNow(),
+            ]
+        ];
+
+        return $spanId;
+    }
+
+    public static function endCustom($spanId)
+    {
+        if (!isset(self::$openSpans[$spanId])) {
+            error_log('[ScoutLite] Span not found: ' . $spanId);
+            return;
+        }
+
+        unset(self::$openSpans[$spanId]);
+
+        self::$eventBuffer[] = ['StopSpan' => [
+            'request_id' => self::$requestId,
+            'span_id' => $spanId,
+            'timestamp' => Timestamp::formatNow(),
+        ]];
+    }
+
+    public static function instrument($name, $callback, $parentId = null)
+    {
+        $spanId = 'span-' . UUID::v4();
+        self::$openSpans[$spanId] = true;
+
+        self::$eventBuffer[] = ['StartSpan' => [
+            'request_id' => self::$requestId,
+            'span_id' => $spanId,
+            'operation' => $name,
+            'timestamp' => Timestamp::formatNow(),
+            'parent_id' => $parentId,
+        ]];
+
+        try {
+            return call_user_func($callback);
+        } finally {
+            self::endCustom($spanId);
+        }
     }
 
     public static function flush()
@@ -253,5 +319,17 @@ class TraceSession
         self::$openSpans = [];
         self::$requestId = null;
         self::$bootstrapped = false;
+    }
+
+    public static function getOpenSpans(){
+        return self::$openSpans;
+    }
+
+    public static function getEventBuffer(){
+        return self::$eventBuffer;
+    }
+
+    public static function getRequestId(){
+        return self::$requestId;
     }
 }
