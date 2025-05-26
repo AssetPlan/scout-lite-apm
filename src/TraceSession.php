@@ -14,35 +14,48 @@ class TraceSession
     protected static $socketPath;
     protected static $openSpans = [];
     protected static $bootstrapped = false;
+    protected static $hostname;
 
-    public static function bootstrap($app = null, $key = null, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0')
+    public static function bootstrap($app = null, $key = null, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0', $hostname = null)
     {
 
         if (! isset($app) || ! isset($key) || ! isset($socketPath)) {
             return;
         }
 
-        self::register($app, $key, $socketPath, $apiVersion);
+        self::register($app, $key, $socketPath, $apiVersion, $hostname);
 
         self::$bootstrapped = true;
     }
 
-    public static function register($app, $key, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0')
+    public static function register($app, $key, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0', $hostname = null)
     {
         if ($socketPath) {
             self::$socketPath = $socketPath;
         }
+
+        if (! $hostname) {
+            $hostname = gethostname();
+        }
+
+        self::$hostname = $hostname;
+
         self::$eventBuffer[] = [
             'Register' => [
                 'app' => $app,
                 'key' => $key,
                 'api_version' => $apiVersion,
+                'host' => $hostname,
             ],
         ];
     }
 
     public static function startRequest()
     {
+        if (!self::$bootstrapped) {
+            return;
+        }
+
         self::$requestId = UUID::v4();
 
         $requestPath = RequestInfo::uri();
@@ -65,6 +78,13 @@ class TraceSession
                 ]
             ];
         }
+
+        self::$eventBuffer[] = ['TagRequest' => [
+            'request_id' => self::$requestId,
+            'tag' => 'node',
+            'value' => self::$hostname,
+            'timestamp' => Timestamp::formatNow(),
+        ]];
 
         self::$eventBuffer[] = [
             'TagRequest' => [
@@ -92,6 +112,9 @@ class TraceSession
     }
     public static function endRequest()
     {
+        if (!self::$bootstrapped) {
+            return;
+        }
         self::$eventBuffer[] = [
             'FinishRequest' => [
                 'request_id' => self::$requestId,
@@ -106,6 +129,11 @@ class TraceSession
         $operation =  'Controller/' . $controllerName . '::' . $action;
 
         $spanId = 'span-' .  UUID::v4();
+
+        if (!self::$bootstrapped) {
+            return $spanId;
+        }
+
         self::$openSpans[$spanId] = true;
 
         self::$eventBuffer[] = [
@@ -124,7 +152,7 @@ class TraceSession
     public static function endController($controllerSpanId)
     {
 
-        if (!isset(self::$openSpans[$controllerSpanId])) {
+        if (!isset(self::$openSpans[$controllerSpanId]) || !self::$bootstrapped) {
             error_log('[ScoutLite] Span not found: ' . $controllerSpanId);
             return;
         }
@@ -142,6 +170,9 @@ class TraceSession
 
     public static function startSql($sql)
     {
+        if (!self::$bootstrapped) {
+            return;
+        }
 
         $spanId = 'span-' . UUID::v4();
 
@@ -183,7 +214,7 @@ class TraceSession
 
     public static function endSql($sqlSpan)
     {
-        if (!$sqlSpan) {
+        if (!$sqlSpan || !self::$bootstrapped) {
             return;
         }
 
@@ -203,6 +234,10 @@ class TraceSession
     public static function startCustom($operation = '', $parentId = null)
     {
         if (!isset($operation) || $operation === '') {
+            return;
+        }
+
+        if (!self::$bootstrapped) {
             return;
         }
 
@@ -237,6 +272,18 @@ class TraceSession
             'span_id' => $spanId,
             'timestamp' => Timestamp::formatNow(),
         ]];
+    }
+
+    public static function addContext($key, $value)
+    {
+        self::$eventBuffer[] = [
+            'TagRequest' => [
+                'request_id' => self::$requestId,
+                'tag' => $key,
+                'value' => $value,
+                'timestamp' => Timestamp::formatNow(),
+            ]
+        ];
     }
 
     public static function instrument($name, $callback, $parentId = null)
@@ -321,15 +368,18 @@ class TraceSession
         self::$bootstrapped = false;
     }
 
-    public static function getOpenSpans(){
+    public static function getOpenSpans()
+    {
         return self::$openSpans;
     }
 
-    public static function getEventBuffer(){
+    public static function getEventBuffer()
+    {
         return self::$eventBuffer;
     }
 
-    public static function getRequestId(){
+    public static function getRequestId()
+    {
         return self::$requestId;
     }
 }
