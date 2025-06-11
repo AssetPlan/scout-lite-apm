@@ -48,6 +48,44 @@ class TraceSession
                 'host' => $hostname,
             ],
         ];
+
+        self::$eventBuffer[] = [
+            'ApplicationEvent' => [
+                'timestamp' => Timestamp::formatNow(),
+                'event_value' => self::getMetadataPayload($app, $key, $apiVersion, $hostname),
+                'event_type' => 'scout.metadata',
+                'source' => 'php',
+            ],
+        ];
+    }
+
+    private static function getMetadataPayload($app, $key, $apiVersion, $hostname)
+    {
+        $payload = [
+            'language' => 'php',
+            // 'version' => PHP_VERSION, // Consider if this is needed
+            // 'language_version' => PHP_VERSION, // Consider if this is needed
+            // 'server_time' => Timestamp::formatNow(), // This will be the event timestamp
+            'framework' => '', // Lite version might not have this
+            'framework_version' => '', // Lite version might not have this
+            'environment' => '', // Lite version might not have this
+            'app_server' => '', // Lite version might not have this
+            'hostname' => $hostname,
+            'database_engine' => '', // Lite version might not have this
+            'database_adapter' => '', // Lite version might not have this
+            'application_name' => $app,
+            // 'libraries' => [], // Lite version might not have this
+            'paas' => '', // Lite version might not have this
+            'application_root' => '', // Lite version might not track this
+            'scm_subdirectory' => '', // Lite version might not track this
+        ];
+
+        $revisionSha = getenv('SCOUT_REVISION_SHA');
+        if ($revisionSha) {
+            $payload['git_sha'] = $revisionSha;
+        }
+
+        return $payload;
     }
 
     public static function startRequest()
