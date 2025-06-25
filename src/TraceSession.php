@@ -63,9 +63,9 @@ class TraceSession
     {
         $payload = [
             'language' => 'php',
-            // 'version' => PHP_VERSION, // Consider if this is needed
-            // 'language_version' => PHP_VERSION, // Consider if this is needed
-            // 'server_time' => Timestamp::formatNow(), // This will be the event timestamp
+            'version' => PHP_VERSION, // Consider if this is needed
+            'language_version' => PHP_VERSION, // Consider if this is needed
+            'server_time' => Timestamp::formatNow(), // This will be the event timestamp
             'framework' => '', // Lite version might not have this
             'framework_version' => '', // Lite version might not have this
             'environment' => '', // Lite version might not have this
@@ -74,7 +74,7 @@ class TraceSession
             'database_engine' => '', // Lite version might not have this
             'database_adapter' => '', // Lite version might not have this
             'application_name' => $app,
-            // 'libraries' => [], // Lite version might not have this
+            'libraries' => [], // Lite version might not have this
             'paas' => '', // Lite version might not have this
             'application_root' => '', // Lite version might not track this
             'scm_subdirectory' => '', // Lite version might not track this
