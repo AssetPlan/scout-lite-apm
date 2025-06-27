@@ -141,7 +141,7 @@ class TraceSession
             self::$eventBuffer[] = [
                 'TagRequest' => [
                     'request_id' => self::$requestId,
-                    'tag' => 'queue_time_ns',
+                    'tag' => 'scout.queue_time_ns',
                     'value' => (int) $queueTimeNs,
                     'timestamp' => Timestamp::formatNow(),
                 ]
