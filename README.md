@@ -86,6 +86,33 @@ TraceSession::register('YourApp', 'your-key', '/tmp/scout-agent.sock', '1.0');
 
 ---
 
+## 🐢 Slow SQL backtraces
+
+When a SQL span lasts **500 ms or more**, `endSql()` attaches a `stack` tag with up to 10 application frames, so Scout shows the file and line that issued the query. Queries under the threshold cost nothing extra: `debug_backtrace()` is only called above it.
+
+The tag uses the same format as Scout's official PHP agent: a list of `{"file": "/absolute/path.php", "line": 42, "function": "Class->method"}`.
+
+Change the threshold per app, in milliseconds (`0` or negative disables it):
+
+```php
+TraceSession::setSqlBacktraceThreshold(250);
+```
+
+or with an environment variable, read by `bootstrap()`:
+
+```bash
+SCOUT_SQL_BACKTRACE_MS=250
+```
+
+Frames from the library itself are always dropped. Frames whose file path contains any of these fragments are dropped too, so the trace points at your application code. The default is `['/cake/', '/vendor/', '/composer-modules/']`. Other frameworks can set their own:
+
+```php
+// e.g. Laravel 5.x
+TraceSession::setSqlBacktraceExcludePaths(['/vendor/']);
+```
+
+---
+
 ## 💡 Tips
 
 * Calling `flush()` multiple times is safe — only one send will occur.
