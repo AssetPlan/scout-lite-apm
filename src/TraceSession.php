@@ -13,8 +13,13 @@ class TraceSession
     protected static $eventBuffer = [];
     protected static $socketPath;
     protected static $openSpans = [];
+    protected static $sqlSpanStarts = [];
     protected static $bootstrapped = false;
     protected static $hostname;
+    protected static $sqlBacktraceThresholdMs = 500;
+    protected static $sqlBacktraceExcludePaths = ['/cake/', '/vendor/', '/composer-modules/'];
+
+    const SQL_BACKTRACE_MAX_FRAMES = 10;
 
     public static function bootstrap($app = null, $key = null, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0', $hostname = null)
     {
@@ -25,7 +30,28 @@ class TraceSession
 
         self::register($app, $key, $socketPath, $apiVersion, $hostname);
 
+        $thresholdMs = getenv('SCOUT_SQL_BACKTRACE_MS');
+        if ($thresholdMs !== false && $thresholdMs !== '') {
+            self::setSqlBacktraceThreshold($thresholdMs);
+        }
+
         self::$bootstrapped = true;
+    }
+
+    /**
+     * SQL spans lasting at least this many milliseconds get a `stack` tag. 0 or negative disables it.
+     */
+    public static function setSqlBacktraceThreshold($ms)
+    {
+        self::$sqlBacktraceThresholdMs = (float) $ms;
+    }
+
+    /**
+     * Frames whose file path contains any of these fragments are left out of SQL backtraces.
+     */
+    public static function setSqlBacktraceExcludePaths(array $fragments)
+    {
+        self::$sqlBacktraceExcludePaths = $fragments;
     }
 
     public static function register($app, $key, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0', $hostname = null)
@@ -229,6 +255,8 @@ class TraceSession
         }
 
         self::$openSpans[$spanId] = true;
+        // Start time, used by endSql to decide whether to attach a backtrace
+        self::$sqlSpanStarts[$spanId] = microtime(true);
 
         $redacted = preg_replace("/('[^']*'|\b\d+\b)/", '?', $sql);
 
@@ -262,11 +290,80 @@ class TraceSession
         }
 
         unset(self::$openSpans[$sqlSpan]);
+
+        // Only spans opened by startSql have a start time; anything else is stopped without a backtrace
+        if (isset(self::$sqlSpanStarts[$sqlSpan])) {
+            $durationMs = (microtime(true) - self::$sqlSpanStarts[$sqlSpan]) * 1000;
+            unset(self::$sqlSpanStarts[$sqlSpan]);
+
+            if (self::$sqlBacktraceThresholdMs > 0 && $durationMs >= self::$sqlBacktraceThresholdMs) {
+                $frames = self::buildSqlStack();
+                if (!empty($frames)) {
+                    self::$eventBuffer[] = ['TagSpan' => [
+                        'request_id' => self::$requestId,
+                        'span_id' => $sqlSpan,
+                        'tag' => 'stack',
+                        'value' => $frames,
+                        'timestamp' => Timestamp::formatNow(),
+                    ]];
+                }
+            }
+        }
+
         self::$eventBuffer[] = ['StopSpan' => [
             'request_id' => self::$requestId,
             'span_id' => $sqlSpan,
             'timestamp' => Timestamp::formatNow(),
         ]];
+    }
+
+    /**
+     * Application frames in the shape Scout's own PHP agent sends: file (absolute), line, function.
+     */
+    private static function buildSqlStack()
+    {
+        $frames = [];
+
+        // No depth limit: deep framework stacks (e.g. CakePHP association recursion) can push
+        // every app frame past any fixed limit. Cost is only paid on slow queries.
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
+            if (!isset($frame['file'], $frame['line'], $frame['function'])) {
+                continue;
+            }
+
+            // Call sites inside this library; the frame where the app called endSql is kept
+            if (strpos($frame['file'], __DIR__ . DIRECTORY_SEPARATOR) === 0 || self::isExcludedPath($frame['file'])) {
+                continue;
+            }
+
+            $function = $frame['function'];
+            if (isset($frame['class'], $frame['type'])) {
+                $function = $frame['class'] . $frame['type'] . $function;
+            }
+
+            $frames[] = [
+                'file' => $frame['file'],
+                'line' => $frame['line'],
+                'function' => $function,
+            ];
+
+            if (count($frames) >= self::SQL_BACKTRACE_MAX_FRAMES) {
+                break;
+            }
+        }
+
+        return $frames;
+    }
+
+    private static function isExcludedPath($file)
+    {
+        foreach (self::$sqlBacktraceExcludePaths as $fragment) {
+            if ($fragment !== '' && strpos($file, $fragment) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function startCustom($operation = '', $parentId = null)
@@ -402,6 +499,7 @@ class TraceSession
     {
         self::$eventBuffer = [];
         self::$openSpans = [];
+        self::$sqlSpanStarts = [];
         self::$requestId = null;
         self::$bootstrapped = false;
     }
