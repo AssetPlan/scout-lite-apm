@@ -111,6 +111,8 @@ Frames from the library itself are always dropped. Frames whose file path contai
 TraceSession::setSqlBacktraceExcludePaths(['/vendor/']);
 ```
 
+If every frame is dropped, no `stack` tag is sent.
+
 ---
 
 ## 💡 Tips

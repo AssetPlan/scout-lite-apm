@@ -4,6 +4,20 @@ require_once 'vendor/autoload.php'; // if needed
 
 use AssetPlan\ScoutLiteAPM\TraceSession;
 
+$failures = 0;
+
+function report($name, $passed, $buffer = null)
+{
+    global $failures;
+    echo $name . ': ' . ($passed ? 'PASSED' : 'FAILED') . "\n";
+    if (!$passed) {
+        $failures++;
+        if ($buffer !== null) {
+            var_dump($buffer);
+        }
+    }
+}
+
 echo "--- Running revision_sha tests ---\n";
 
 // Test Case 1: SCOUT_REVISION_SHA is set
@@ -37,12 +51,7 @@ if ($applicationEvent !== null) {
     }
 }
 
-if ($testPassed) {
-    echo "Test Case 1 (SCOUT_REVISION_SHA set): PASSED\n";
-} else {
-    echo "Test Case 1 (SCOUT_REVISION_SHA set): FAILED\n";
-    var_dump($eventBuffer); // Dump buffer on failure
-}
+report('Test Case 1 (SCOUT_REVISION_SHA set)', $testPassed, $eventBuffer);
 
 // Test Case 2: SCOUT_REVISION_SHA is not set
 putenv('SCOUT_REVISION_SHA'); // Unset the environment variable
@@ -68,26 +77,13 @@ if ($applicationEvent !== null) {
     }
 }
 
-if ($testPassed) {
-    echo "Test Case 2 (SCOUT_REVISION_SHA not set): PASSED\n";
-} else {
-    echo "Test Case 2 (SCOUT_REVISION_SHA not set): FAILED\n";
-    var_dump($eventBuffer); // Dump buffer on failure
-}
+report('Test Case 2 (SCOUT_REVISION_SHA not set)', $testPassed, $eventBuffer);
 
 echo "--- End of revision_sha tests ---\n\n";
 
 echo "--- Running slow SQL backtrace tests ---\n";
 
 require_once __DIR__ . '/fixtures/vendor/fake/helper.php';
-
-function report($name, $passed, $buffer = null)
-{
-    echo $name . ': ' . ($passed ? 'PASSED' : 'FAILED') . "\n";
-    if (!$passed && $buffer !== null) {
-        var_dump($buffer);
-    }
-}
 
 function startTestRequest($thresholdMs)
 {
@@ -217,6 +213,48 @@ restore_error_handler();
 $eventBuffer = $eventBufferProp->getValue();
 report('Test Case 9 (not bootstrapped is a no-op)', $sqlSpan === null && empty($eventBuffer) && empty($warnings), $eventBuffer);
 
+// Test Case 10: app frame is found under a framework stack deeper than any fixed backtrace limit
+startTestRequest(1);
+$sqlSpan = TraceSession::startSql('SELECT * FROM users WHERE id = 42');
+usleep(5000);
+fake_vendor_deep_end_sql($sqlSpan, 60);
+$eventBuffer = $eventBufferProp->getValue();
+$tags = stackTagsFor($eventBuffer, $sqlSpan);
+$testPassed = count($tags) === 1;
+if ($testPassed) {
+    $frames = current($tags)['value'];
+    $testPassed = $frames[0]['file'] === __FILE__ && $frames[0]['function'] === 'fake_vendor_deep_end_sql';
+}
+report('Test Case 10 (app frame found under deep vendor stack)', $testPassed, $eventBuffer);
+
+// Test Case 11: no stack tag when every frame is excluded
+startTestRequest(1);
+TraceSession::setSqlBacktraceExcludePaths(['/tests/']);
+$sqlSpan = TraceSession::startSql('SELECT * FROM users WHERE id = 42');
+usleep(5000);
+TraceSession::endSql($sqlSpan);
+TraceSession::setSqlBacktraceExcludePaths(['/cake/', '/vendor/', '/composer-modules/']);
+$eventBuffer = $eventBufferProp->getValue();
+report('Test Case 11 (no stack tag when all frames excluded)', count(stackTagsFor($eventBuffer, $sqlSpan)) === 0 && stopIndexFor($eventBuffer, $sqlSpan) !== null, $eventBuffer);
+
+// Test Case 12: endSql on a non-SQL span stops it without a duration or stack tag
+startTestRequest(1);
+$controllerSpan = TraceSession::startController('TestController', 'index');
+usleep(5000);
+$warnings = [];
+set_error_handler(function ($errno, $errstr) use (&$warnings) {
+    $warnings[] = $errstr;
+    return true;
+});
+TraceSession::endSql($controllerSpan);
+restore_error_handler();
+$eventBuffer = $eventBufferProp->getValue();
+$testPassed = count(stackTagsFor($eventBuffer, $controllerSpan)) === 0 &&
+    stopIndexFor($eventBuffer, $controllerSpan) !== null &&
+    count(TraceSession::getOpenSpans()) === 0 &&
+    empty($warnings);
+report('Test Case 12 (endSql on non-SQL span has no stack tag)', $testPassed, $eventBuffer);
+
 TraceSession::setSqlBacktraceThreshold(500);
 TraceSession::resetSession();
 
@@ -270,3 +308,8 @@ var_dump($buffer);
 
 // Optional: manually flush to socket
 //TraceSession::flush();
+
+report('End-to-end trace is valid', $health === 'Valid');
+
+echo "\n" . ($failures === 0 ? 'All tests passed' : "$failures test(s) failed") . "\n";
+exit($failures === 0 ? 0 : 1);

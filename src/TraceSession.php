@@ -13,12 +13,12 @@ class TraceSession
     protected static $eventBuffer = [];
     protected static $socketPath;
     protected static $openSpans = [];
+    protected static $sqlSpanStarts = [];
     protected static $bootstrapped = false;
     protected static $hostname;
     protected static $sqlBacktraceThresholdMs = 500;
     protected static $sqlBacktraceExcludePaths = ['/cake/', '/vendor/', '/composer-modules/'];
 
-    const SQL_BACKTRACE_DEPTH = 40;
     const SQL_BACKTRACE_MAX_FRAMES = 10;
 
     public static function bootstrap($app = null, $key = null, $socketPath = 'tcp://127.0.0.1:6590', $apiVersion = '1.0', $hostname = null)
@@ -254,8 +254,9 @@ class TraceSession
             return null;
         }
 
+        self::$openSpans[$spanId] = true;
         // Start time, used by endSql to decide whether to attach a backtrace
-        self::$openSpans[$spanId] = microtime(true);
+        self::$sqlSpanStarts[$spanId] = microtime(true);
 
         $redacted = preg_replace("/('[^']*'|\b\d+\b)/", '?', $sql);
 
@@ -288,17 +289,25 @@ class TraceSession
             return;
         }
 
-        $durationMs = (microtime(true) - self::$openSpans[$sqlSpan]) * 1000;
         unset(self::$openSpans[$sqlSpan]);
 
-        if (self::$sqlBacktraceThresholdMs > 0 && $durationMs >= self::$sqlBacktraceThresholdMs) {
-            self::$eventBuffer[] = ['TagSpan' => [
-                'request_id' => self::$requestId,
-                'span_id' => $sqlSpan,
-                'tag' => 'stack',
-                'value' => self::buildSqlStack(),
-                'timestamp' => Timestamp::formatNow(),
-            ]];
+        // Only spans opened by startSql have a start time; anything else is stopped without a backtrace
+        if (isset(self::$sqlSpanStarts[$sqlSpan])) {
+            $durationMs = (microtime(true) - self::$sqlSpanStarts[$sqlSpan]) * 1000;
+            unset(self::$sqlSpanStarts[$sqlSpan]);
+
+            if (self::$sqlBacktraceThresholdMs > 0 && $durationMs >= self::$sqlBacktraceThresholdMs) {
+                $frames = self::buildSqlStack();
+                if (!empty($frames)) {
+                    self::$eventBuffer[] = ['TagSpan' => [
+                        'request_id' => self::$requestId,
+                        'span_id' => $sqlSpan,
+                        'tag' => 'stack',
+                        'value' => $frames,
+                        'timestamp' => Timestamp::formatNow(),
+                    ]];
+                }
+            }
         }
 
         self::$eventBuffer[] = ['StopSpan' => [
@@ -315,7 +324,9 @@ class TraceSession
     {
         $frames = [];
 
-        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, self::SQL_BACKTRACE_DEPTH) as $frame) {
+        // No depth limit: deep framework stacks (e.g. CakePHP association recursion) can push
+        // every app frame past any fixed limit. Cost is only paid on slow queries.
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
             if (!isset($frame['file'], $frame['line'], $frame['function'])) {
                 continue;
             }
@@ -488,6 +499,7 @@ class TraceSession
     {
         self::$eventBuffer = [];
         self::$openSpans = [];
+        self::$sqlSpanStarts = [];
         self::$requestId = null;
         self::$bootstrapped = false;
     }
